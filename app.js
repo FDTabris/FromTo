@@ -65,8 +65,7 @@ function isLikelyIPhoneChrome() {
   return /iPhone/i.test(ua) && /CriOS/i.test(ua);
 }
 
-function showSnapshotPreviewOverlay(blob, filename) {
-  const blobUrl = URL.createObjectURL(blob);
+function showSnapshotPreviewOverlay(imageUrl, filename, onClose) {
   const overlay = document.createElement("div");
   overlay.style.position = "fixed";
   overlay.style.inset = "0";
@@ -94,7 +93,7 @@ function showSnapshotPreviewOverlay(blob, filename) {
   controls.style.gap = "8px";
 
   const openButton = document.createElement("a");
-  openButton.href = blobUrl;
+  openButton.href = imageUrl;
   openButton.target = "_blank";
   openButton.rel = "noopener";
   openButton.textContent = "Open";
@@ -118,7 +117,7 @@ function showSnapshotPreviewOverlay(blob, filename) {
   toolbar.append(hint, controls);
 
   const image = document.createElement("img");
-  image.src = blobUrl;
+  image.src = imageUrl;
   image.alt = filename;
   image.style.width = "100%";
   image.style.height = "100%";
@@ -131,7 +130,9 @@ function showSnapshotPreviewOverlay(blob, filename) {
 
   const cleanup = () => {
     overlay.remove();
-    URL.revokeObjectURL(blobUrl);
+    if (typeof onClose === "function") {
+      onClose();
+    }
     document.removeEventListener("keydown", handleEsc);
   };
 
@@ -153,54 +154,251 @@ function showSnapshotPreviewOverlay(blob, filename) {
   document.addEventListener("keydown", handleEsc);
 }
 
-function buildShareCaptureElement() {
+function wrapCanvasText(ctx, text, maxWidth) {
+  const lines = [];
+  const paragraphs = String(text || "").split(/\n+/).map((part) => part.trim()).filter(Boolean);
+  for (const paragraph of paragraphs) {
+    const words = paragraph.split(/\s+/);
+    let line = "";
+    for (const word of words) {
+      const candidate = line ? `${line} ${word}` : word;
+      if (ctx.measureText(candidate).width <= maxWidth) {
+        line = candidate;
+        continue;
+      }
+      if (line) {
+        lines.push(line);
+      }
+      line = word;
+    }
+    if (line) {
+      lines.push(line);
+    }
+  }
+  return lines.length > 0 ? lines : [""];
+}
+
+function loadImageForCanvas(imageUrl) {
+  return new Promise((resolve) => {
+    if (!imageUrl) {
+      resolve(null);
+      return;
+    }
+    const img = new Image();
+    img.decoding = "sync";
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = imageUrl;
+  });
+}
+
+function roundedRectPath(ctx, x, y, width, height, radius) {
+  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  ctx.lineTo(x + r, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+async function buildShareCanvas() {
   const detailRoot = el.detail;
   if (!detailRoot || detailRoot.classList.contains("hidden")) {
     return null;
   }
 
-  const phraseCard = detailRoot.querySelector(".phrase-card");
-  const imageWrap = detailRoot.querySelector(".event-image-wrap");
-  const metaCard = detailRoot.querySelector(".meta-card");
-  if (!phraseCard || !metaCard) {
+  const phraseText = (el.metricMain && el.metricMain.innerText ? el.metricMain.innerText : "").trim();
+  const descriptionText = (el.description && el.description.textContent ? el.description.textContent : "").trim();
+  const timeText = (el.localTime && el.localTime.textContent ? el.localTime.textContent : "").trim();
+  if (!phraseText || !timeText) {
     return null;
   }
 
-  const sourcePanel = document.querySelector(".event-detail-panel");
-  const sourceWidth = sourcePanel ? Math.round(sourcePanel.getBoundingClientRect().width) : Math.round(window.innerWidth - 24);
-  const captureWidth = Math.max(280, Math.min(sourceWidth, Math.round(window.innerWidth - 24)));
-
-  const host = document.createElement("div");
-  host.style.position = "fixed";
-  host.style.left = "0";
-  host.style.top = "0";
-  host.style.opacity = "0";
-  host.style.pointerEvents = "none";
-  host.style.zIndex = "-1";
-
-  const panel = document.createElement("section");
-  panel.className = "event-detail-panel";
-  panel.style.width = `${captureWidth}px`;
-  panel.style.margin = "0";
-
-  panel.appendChild(phraseCard.cloneNode(true));
-  if (imageWrap && !imageWrap.classList.contains("hidden")) {
-    const clonedImageWrap = imageWrap.cloneNode(true);
-    const clonedImage = clonedImageWrap.querySelector(".event-image");
-    if (clonedImage) {
-      clonedImage.style.width = "auto";
-      clonedImage.style.maxWidth = "100%";
-      clonedImage.style.height = "auto";
-      clonedImage.style.maxHeight = "min(62vh, 520px)";
-      clonedImage.style.objectFit = "contain";
-    }
-    panel.appendChild(clonedImageWrap);
+  let eventImage = null;
+  const hasVisibleImage = el.imageWrap && !el.imageWrap.classList.contains("hidden") && el.image;
+  if (hasVisibleImage) {
+    const imageUrl = el.image.currentSrc || el.image.src || "";
+    eventImage = await loadImageForCanvas(imageUrl);
   }
-  panel.appendChild(metaCard.cloneNode(true));
 
-  host.appendChild(panel);
-  document.body.appendChild(host);
-  return { host, panel };
+  const width = 1080;
+  const outerPadding = 44;
+  const panelPadding = 34;
+  const cardPadding = 24;
+  const sectionGap = 22;
+  const contentWidth = width - outerPadding * 2 - panelPadding * 2;
+  const phraseLineHeight = 58;
+  const descriptionLineHeight = 38;
+  const timeLineHeight = 42;
+  const imageMaxHeight = 600;
+  const imageCardPadding = 16;
+
+  const measureCanvas = document.createElement("canvas");
+  const measureCtx = measureCanvas.getContext("2d");
+  if (!measureCtx) {
+    return null;
+  }
+
+  measureCtx.font = '700 48px "Segoe UI", Arial, sans-serif';
+  const phraseLines = wrapCanvasText(measureCtx, phraseText, contentWidth - cardPadding * 2);
+  measureCtx.font = '500 30px "Segoe UI", Arial, sans-serif';
+  const descriptionLines = descriptionText ? wrapCanvasText(measureCtx, descriptionText, contentWidth - cardPadding * 2) : [];
+  measureCtx.font = '700 34px "Segoe UI", Arial, sans-serif';
+  const timeLines = wrapCanvasText(measureCtx, timeText, contentWidth - cardPadding * 2);
+
+  let drawImageWidth = 0;
+  let drawImageHeight = 0;
+  if (eventImage) {
+    const maxImageWidth = contentWidth - imageCardPadding * 2;
+    const imageScale = Math.min(maxImageWidth / eventImage.width, imageMaxHeight / eventImage.height, 1);
+    drawImageWidth = Math.round(eventImage.width * imageScale);
+    drawImageHeight = Math.round(eventImage.height * imageScale);
+  }
+
+  const phraseCardHeight = cardPadding * 2 + phraseLines.length * phraseLineHeight;
+  const descriptionCardHeight = descriptionLines.length > 0 ? cardPadding * 2 + descriptionLines.length * descriptionLineHeight : 0;
+  const imageCardHeight = drawImageHeight > 0 ? imageCardPadding * 2 + drawImageHeight : 0;
+  const timeCardHeight = cardPadding + 24 + 12 + timeLines.length * timeLineHeight + cardPadding;
+
+  let panelHeight = panelPadding + phraseCardHeight;
+  if (descriptionCardHeight > 0) {
+    panelHeight += sectionGap + descriptionCardHeight;
+  }
+  if (drawImageHeight > 0) {
+    panelHeight += sectionGap + imageCardHeight;
+  }
+  panelHeight += sectionGap + timeCardHeight + panelPadding;
+
+  const height = outerPadding * 2 + panelHeight;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    return null;
+  }
+
+  const bgGradient = ctx.createLinearGradient(0, 0, 0, height);
+  bgGradient.addColorStop(0, "#fafcff");
+  bgGradient.addColorStop(1, "#f6f8fb");
+  ctx.fillStyle = bgGradient;
+  ctx.fillRect(0, 0, width, height);
+
+  const panelX = outerPadding;
+  const panelY = outerPadding;
+  const panelWidth = width - outerPadding * 2;
+  const panelRadius = 26;
+
+  ctx.save();
+  ctx.shadowColor = "rgba(22, 34, 52, 0.12)";
+  ctx.shadowBlur = 28;
+  ctx.shadowOffsetY = 12;
+  roundedRectPath(ctx, panelX, panelY, panelWidth, panelHeight, panelRadius);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  roundedRectPath(ctx, panelX, panelY, panelWidth, panelHeight, panelRadius);
+  ctx.strokeStyle = "#e1e8f0";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+
+  const contentX = panelX + panelPadding;
+  let y = panelY + panelPadding;
+
+  roundedRectPath(ctx, contentX, y, contentWidth, phraseCardHeight, 20);
+  const phraseGradient = ctx.createLinearGradient(contentX, y, contentX + contentWidth, y + phraseCardHeight);
+  phraseGradient.addColorStop(0, "#f0fbf8");
+  phraseGradient.addColorStop(1, "#ffffff");
+  ctx.fillStyle = phraseGradient;
+  ctx.fill();
+  ctx.strokeStyle = "#bde3dc";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  y += cardPadding + 42;
+  ctx.fillStyle = "#0d5e57";
+  ctx.font = '700 48px "Segoe UI", Arial, sans-serif';
+  for (const line of phraseLines) {
+    ctx.fillText(line, contentX + cardPadding, y);
+    y += phraseLineHeight;
+  }
+
+  y = panelY + panelPadding + phraseCardHeight;
+  if (descriptionCardHeight > 0) {
+    y += sectionGap;
+    const descriptionCardX = contentX;
+    const descriptionCardY = y;
+    roundedRectPath(ctx, descriptionCardX, descriptionCardY, contentWidth, descriptionCardHeight, 18);
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    ctx.strokeStyle = "#e1e8f0";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    let descriptionY = descriptionCardY + cardPadding + 30;
+    ctx.fillStyle = "#607089";
+    ctx.font = '500 30px "Segoe UI", Arial, sans-serif';
+    for (const line of descriptionLines) {
+      ctx.fillText(line, descriptionCardX + cardPadding, descriptionY);
+      descriptionY += descriptionLineHeight;
+    }
+    y += descriptionCardHeight;
+  }
+
+  if (eventImage && drawImageHeight > 0) {
+    y += sectionGap;
+
+    const imageCardX = contentX;
+    const imageCardY = y;
+    roundedRectPath(ctx, imageCardX, imageCardY, contentWidth, imageCardHeight, 18);
+    ctx.fillStyle = "#eef3f8";
+    ctx.fill();
+    ctx.strokeStyle = "#e1e8f0";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    const imageX = Math.round(imageCardX + (contentWidth - drawImageWidth) / 2);
+    const imageY = imageCardY + imageCardPadding;
+    ctx.drawImage(eventImage, imageX, imageY, drawImageWidth, drawImageHeight);
+    y += imageCardHeight;
+  }
+
+  y += sectionGap;
+
+  const timeCardX = contentX;
+  const timeCardY = y;
+  roundedRectPath(ctx, timeCardX, timeCardY, contentWidth, timeCardHeight, 18);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+  ctx.strokeStyle = "#e1e8f0";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  let timeY = timeCardY + cardPadding + 18;
+  ctx.fillStyle = "#607089";
+  ctx.font = '700 22px "Segoe UI", Arial, sans-serif';
+  ctx.fillText("TIME", timeCardX + cardPadding, timeY);
+  timeY += 42;
+
+  ctx.fillStyle = "#1c2a3f";
+  ctx.font = '700 34px "Segoe UI", Arial, sans-serif';
+  for (const line of timeLines) {
+    ctx.fillText(line, timeCardX + cardPadding, timeY);
+    timeY += timeLineHeight;
+  }
+
+  return canvas;
 }
 
 async function handleShareSnapshot() {
@@ -208,31 +406,26 @@ async function handleShareSnapshot() {
     return;
   }
 
-  const html2canvasFn = window.html2canvas;
-  if (typeof html2canvasFn !== "function") {
-    return;
-  }
-
   const priorTitle = el.shareButton.title;
   el.shareButton.disabled = true;
   el.shareButton.title = "Preparing image...";
-  let captureElements = null;
 
   try {
-    captureElements = buildShareCaptureElement();
-    if (!captureElements) {
+    const canvas = await buildShareCanvas();
+    if (!canvas) {
       return;
     }
 
-    const canvas = await html2canvasFn(captureElements.panel, {
-      useCORS: true,
-      backgroundColor: "#ffffff",
-      scale: Math.min(2, window.devicePixelRatio || 1),
-    });
-
-    const blob = await canvasToBlob(canvas);
     const timestamp = DateTime.now().toFormat("yyyyLLdd-HHmmss");
     const filename = `fromto-${timestamp}.png`;
+
+    if (isLikelyIPhoneChrome()) {
+      const dataUrl = canvas.toDataURL("image/png");
+      showSnapshotPreviewOverlay(dataUrl, filename);
+      return;
+    }
+
+    const blob = await canvasToBlob(canvas);
     const file = new File([blob], filename, { type: "image/png" });
 
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -243,18 +436,21 @@ async function handleShareSnapshot() {
       return;
     }
 
-    if (isLikelyIPhoneChrome()) {
-      showSnapshotPreviewOverlay(blob, filename);
-      return;
-    }
-
     downloadSnapshot(blob, filename);
   } catch (_error) {
     // Keep UI resilient if capture/share is canceled or blocked.
-  } finally {
-    if (captureElements && captureElements.host) {
-      captureElements.host.remove();
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "FromTo",
+          text: "FromTo snapshot",
+          url: window.location.href,
+        });
+      } catch (_shareError) {
+        // Ignore fallback cancellation/errors.
+      }
     }
+  } finally {
     el.shareButton.disabled = false;
     el.shareButton.title = priorTitle;
   }
