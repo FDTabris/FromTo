@@ -9,6 +9,10 @@
       defer
       src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"
     ></script>
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"
+    ></script>
     <script defer src="app.js"></script>
   </head>
   <body>
@@ -19,9 +23,18 @@
           <h1>FromTo</h1>
           <p>Moments in motion</p>
         </div>
-        <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="Switch event" title="Switch Event">
-          <span aria-hidden="true">⇅</span>
-        </button>
+        <div class="banner-actions">
+          <button id="share-button" class="top-action-button" type="button" aria-label="Share page as image" title="Share">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path
+                d="M18 16a3 3 0 0 0-2.42 1.22L8.91 13.7a3.09 3.09 0 0 0 0-3.4l6.67-3.52A3 3 0 1 0 15 5a3 3 0 0 0 .05.53L8.38 9.05a3 3 0 1 0 0 5.9l6.67 3.52A3 3 0 1 0 18 16Z"
+              />
+            </svg>
+          </button>
+          <button id="sidebar-toggle" class="top-action-button sidebar-toggle" type="button" aria-label="Switch event" title="Switch Event">
+            <span aria-hidden="true">⇅</span>
+          </button>
+        </div>
       </div>
     </header>
 

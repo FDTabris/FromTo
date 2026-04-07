@@ -20,6 +20,7 @@ const state = {
 };
 
 const el = {
+  shareButton: document.getElementById("share-button"),
   sidebarToggle: document.getElementById("sidebar-toggle"),
   sidebarClose: document.getElementById("sidebar-close"),
   sidebar: document.getElementById("event-sidebar"),
@@ -35,6 +36,229 @@ const el = {
   localTime: document.getElementById("event-local-time"),
   metricMain: document.getElementById("metric-main"),
 };
+
+function canvasToBlob(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+        return;
+      }
+      reject(new Error("Unable to create image blob."));
+    }, "image/png");
+  });
+}
+
+function downloadSnapshot(blob, filename) {
+  const blobUrl = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = blobUrl;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(blobUrl);
+}
+
+function isLikelyIPhoneChrome() {
+  const ua = navigator.userAgent || "";
+  return /iPhone/i.test(ua) && /CriOS/i.test(ua);
+}
+
+function showSnapshotPreviewOverlay(blob, filename) {
+  const blobUrl = URL.createObjectURL(blob);
+  const overlay = document.createElement("div");
+  overlay.style.position = "fixed";
+  overlay.style.inset = "0";
+  overlay.style.zIndex = "9999";
+  overlay.style.background = "rgba(10, 16, 26, 0.92)";
+  overlay.style.display = "flex";
+  overlay.style.flexDirection = "column";
+  overlay.style.padding = "12px";
+  overlay.style.gap = "10px";
+
+  const toolbar = document.createElement("div");
+  toolbar.style.display = "flex";
+  toolbar.style.justifyContent = "space-between";
+  toolbar.style.alignItems = "center";
+  toolbar.style.gap = "8px";
+
+  const hint = document.createElement("p");
+  hint.textContent = "Long-press image to share or save";
+  hint.style.margin = "0";
+  hint.style.fontSize = "14px";
+  hint.style.color = "#e8f0fb";
+
+  const controls = document.createElement("div");
+  controls.style.display = "flex";
+  controls.style.gap = "8px";
+
+  const openButton = document.createElement("a");
+  openButton.href = blobUrl;
+  openButton.target = "_blank";
+  openButton.rel = "noopener";
+  openButton.textContent = "Open";
+  openButton.style.color = "#e8f0fb";
+  openButton.style.border = "1px solid #99b5d8";
+  openButton.style.borderRadius = "8px";
+  openButton.style.padding = "6px 10px";
+  openButton.style.textDecoration = "none";
+
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.textContent = "Close";
+  closeButton.style.border = "1px solid #99b5d8";
+  closeButton.style.background = "transparent";
+  closeButton.style.color = "#e8f0fb";
+  closeButton.style.borderRadius = "8px";
+  closeButton.style.padding = "6px 10px";
+  closeButton.style.cursor = "pointer";
+
+  controls.append(openButton, closeButton);
+  toolbar.append(hint, controls);
+
+  const image = document.createElement("img");
+  image.src = blobUrl;
+  image.alt = filename;
+  image.style.width = "100%";
+  image.style.height = "100%";
+  image.style.objectFit = "contain";
+  image.style.flex = "1";
+  image.style.borderRadius = "10px";
+  image.style.background = "#111";
+  image.style.userSelect = "none";
+  image.style.webkitUserSelect = "none";
+
+  const cleanup = () => {
+    overlay.remove();
+    URL.revokeObjectURL(blobUrl);
+    document.removeEventListener("keydown", handleEsc);
+  };
+
+  const handleEsc = (event) => {
+    if (event.key === "Escape") {
+      cleanup();
+    }
+  };
+
+  closeButton.addEventListener("click", cleanup);
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) {
+      cleanup();
+    }
+  });
+
+  overlay.append(toolbar, image);
+  document.body.appendChild(overlay);
+  document.addEventListener("keydown", handleEsc);
+}
+
+function buildShareCaptureElement() {
+  const detailRoot = el.detail;
+  if (!detailRoot || detailRoot.classList.contains("hidden")) {
+    return null;
+  }
+
+  const phraseCard = detailRoot.querySelector(".phrase-card");
+  const imageWrap = detailRoot.querySelector(".event-image-wrap");
+  const metaCard = detailRoot.querySelector(".meta-card");
+  if (!phraseCard || !metaCard) {
+    return null;
+  }
+
+  const sourcePanel = document.querySelector(".event-detail-panel");
+  const sourceWidth = sourcePanel ? Math.round(sourcePanel.getBoundingClientRect().width) : Math.round(window.innerWidth - 24);
+  const captureWidth = Math.max(280, Math.min(sourceWidth, Math.round(window.innerWidth - 24)));
+
+  const host = document.createElement("div");
+  host.style.position = "fixed";
+  host.style.left = "0";
+  host.style.top = "0";
+  host.style.opacity = "0";
+  host.style.pointerEvents = "none";
+  host.style.zIndex = "-1";
+
+  const panel = document.createElement("section");
+  panel.className = "event-detail-panel";
+  panel.style.width = `${captureWidth}px`;
+  panel.style.margin = "0";
+
+  panel.appendChild(phraseCard.cloneNode(true));
+  if (imageWrap && !imageWrap.classList.contains("hidden")) {
+    const clonedImageWrap = imageWrap.cloneNode(true);
+    const clonedImage = clonedImageWrap.querySelector(".event-image");
+    if (clonedImage) {
+      clonedImage.style.width = "auto";
+      clonedImage.style.maxWidth = "100%";
+      clonedImage.style.height = "auto";
+      clonedImage.style.maxHeight = "min(62vh, 520px)";
+      clonedImage.style.objectFit = "contain";
+    }
+    panel.appendChild(clonedImageWrap);
+  }
+  panel.appendChild(metaCard.cloneNode(true));
+
+  host.appendChild(panel);
+  document.body.appendChild(host);
+  return { host, panel };
+}
+
+async function handleShareSnapshot() {
+  if (!el.shareButton) {
+    return;
+  }
+
+  const html2canvasFn = window.html2canvas;
+  if (typeof html2canvasFn !== "function") {
+    return;
+  }
+
+  const priorTitle = el.shareButton.title;
+  el.shareButton.disabled = true;
+  el.shareButton.title = "Preparing image...";
+  let captureElements = null;
+
+  try {
+    captureElements = buildShareCaptureElement();
+    if (!captureElements) {
+      return;
+    }
+
+    const canvas = await html2canvasFn(captureElements.panel, {
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      scale: Math.min(2, window.devicePixelRatio || 1),
+    });
+
+    const blob = await canvasToBlob(canvas);
+    const timestamp = DateTime.now().toFormat("yyyyLLdd-HHmmss");
+    const filename = `fromto-${timestamp}.png`;
+    const file = new File([blob], filename, { type: "image/png" });
+
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        files: [file],
+        title: "FromTo snapshot",
+      });
+      return;
+    }
+
+    if (isLikelyIPhoneChrome()) {
+      showSnapshotPreviewOverlay(blob, filename);
+      return;
+    }
+
+    downloadSnapshot(blob, filename);
+  } catch (_error) {
+    // Keep UI resilient if capture/share is canceled or blocked.
+  } finally {
+    if (captureElements && captureElements.host) {
+      captureElements.host.remove();
+    }
+    el.shareButton.disabled = false;
+    el.shareButton.title = priorTitle;
+  }
+}
 
 function splitCsvLine(line) {
   const cells = [];
@@ -268,8 +492,8 @@ function setPhrase(isFuture, eventName, parts, hasExplicitTime) {
   if (!el.metricMain) {
     return;
   }
-  const prefix = isFuture ? "There are " : "There have been ";
-  const mid = isFuture ? " until " : " since ";
+  const prefix = isFuture ? "There are " : "It has been ";
+  const mid = isFuture ? " left until " : " since ";
   const timeText = hasExplicitTime ? formatCompactTimeParts(parts) : formatDateOnlyTimeParts(parts);
 
   el.metricMain.innerHTML = "";
@@ -582,6 +806,10 @@ if (el.sidebarToggle) {
     }
     openSidebar();
   });
+}
+
+if (el.shareButton) {
+  el.shareButton.addEventListener("click", handleShareSnapshot);
 }
 
 if (el.sidebarClose) {
