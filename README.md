@@ -4,6 +4,8 @@ A frontend-only SPA for tracking memorable events:
 - Future events: countdown phrase
 - Past events: elapsed-time phrase
 
+<!-- Updated for redeployment -->
+
 ## Run Locally
 
 Serve this folder with a local static server (do not open via `file://`):
@@ -63,3 +65,4 @@ npm run build
 ```
 
 This regenerates `pic/manifest.json` from files in `pic/`.
+
