@@ -5,6 +5,19 @@ description: Add or update FromTo events in `events.csv` and map images in `pic/
 
 # FromTo Event Ingest
 
+## Default Mode
+
+Treat this skill as **FULL mode by default**.
+
+When the user asks to "add event", always complete all steps below unless user explicitly says `CSV only`:
+1. Add or update the event row in `events.csv`.
+2. Source a suitable representative image from a reliable linkable source.
+3. Save image as `pic/<id>.<ext>` using id-based mapping.
+4. Run `npm run build` to refresh `pic/manifest.json`.
+5. Report source URL and license/reuse status in the final response.
+
+Do not stop after CSV update when user did not request `CSV only`.
+
 ## Workflow
 
 1. Read current `events.csv` and detect the next available `id`.
@@ -18,6 +31,11 @@ description: Add or update FromTo events in `events.csv` and map images in `pic/
 4. For an event image, map strictly by id:
    - save as `pic/<id>.<ext>` where ext is one of `jpg,jpeg,png,webp,gif,avif`
 5. Run `npm run build` after image changes to regenerate `pic/manifest.json`.
+6. In final response, include:
+   - updated event id
+   - saved image path
+   - image source URL
+   - stated license/reuse status
 
 ## Sourcing Guidance
 
