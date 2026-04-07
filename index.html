@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FromTo Tracker</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"
+    ></script>
+    <script defer src="app.js"></script>
+  </head>
+  <body>
+    <header class="top-banner">
+      <div class="banner-inner">
+        <div class="brand-mark" aria-hidden="true">FT</div>
+        <div class="brand-text">
+          <h1>FromTo</h1>
+          <p>Moments in motion</p>
+        </div>
+        <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="Switch event" title="Switch Event">
+          <span aria-hidden="true">⇅</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="app-shell">
+      <main class="layout">
+        <section class="event-detail-panel" aria-live="polite">
+          <p id="loading" class="loading">Loading events...</p>
+          <div id="event-detail" class="event-detail hidden">
+            <div class="phrase-card">
+              <p id="metric-main" class="metric-main"></p>
+            </div>
+
+            <p id="event-description" class="event-description"></p>
+            <figure id="event-image-wrap" class="event-image-wrap hidden">
+              <img id="event-image" class="event-image" alt="" loading="lazy" />
+            </figure>
+
+            <div class="meta-card">
+              <h3>Time</h3>
+              <p id="event-local-time" class="meta-value"></p>
+            </div>
+          </div>
+
+          <p id="empty-state" class="empty-state hidden">
+            No valid events were found in <code>events.csv</code>.
+          </p>
+        </section>
+      </main>
+    </div>
+
+    <div id="sidebar-overlay" class="sidebar-overlay hidden"></div>
+    <aside id="event-sidebar" class="event-sidebar" aria-hidden="true">
+      <div class="sidebar-head">
+        <h2>Switch Event</h2>
+        <button id="sidebar-close" class="sidebar-close" type="button" aria-label="Close event list">Close</button>
+      </div>
+      <div class="sidebar-filter">
+        <label>Tag</label>
+        <div id="tag-filter-buttons" class="tag-filter-buttons" aria-label="Filter events by tag"></div>
+      </div>
+      <div id="event-list" class="event-list" aria-label="Event list"></div>
+    </aside>
+  </body>
+</html>
