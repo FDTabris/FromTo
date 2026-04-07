@@ -17,6 +17,7 @@ const state = {
   isImageManifestLoaded: false,
   lastImageEventKey: null,
   isSidebarOpen: false,
+  scrollLockY: 0,
 };
 
 const el = {
@@ -684,6 +685,35 @@ function formatDateOnlyTimeParts(parts) {
   return unit(parts.days, "day");
 }
 
+function formatYearsDaysCompact(parts) {
+  const yearText = `${parts.years}y`;
+  const dayText = `${parts.days}d`;
+  if (parts.years > 0) {
+    return `${yearText} ${dayText}`;
+  }
+  return dayText;
+}
+
+function lockBodyScroll() {
+  state.scrollLockY = window.scrollY || window.pageYOffset || 0;
+  document.body.classList.add("sidebar-open");
+  document.body.style.position = "fixed";
+  document.body.style.top = `-${state.scrollLockY}px`;
+  document.body.style.left = "0";
+  document.body.style.right = "0";
+  document.body.style.width = "100%";
+}
+
+function unlockBodyScroll() {
+  document.body.classList.remove("sidebar-open");
+  document.body.style.position = "";
+  document.body.style.top = "";
+  document.body.style.left = "";
+  document.body.style.right = "";
+  document.body.style.width = "";
+  window.scrollTo(0, state.scrollLockY || 0);
+}
+
 function setPhrase(isFuture, eventName, parts, hasExplicitTime) {
   if (!el.metricMain) {
     return;
@@ -827,12 +857,12 @@ function setActiveEvent(index) {
 }
 
 function getFilteredEvents() {
-  if (state.activeTag === "All") {
-    return state.events.map((event, index) => ({ event, index }));
-  }
-  return state.events
+  const mapped = state.events
     .map((event, index) => ({ event, index }))
-    .filter(({ event }) => (event.tag || "Untagged") === state.activeTag);
+    .filter(({ event }) => state.activeTag === "All" || (event.tag || "Untagged") === state.activeTag);
+
+  mapped.sort((a, b) => b.event.target.toMillis() - a.event.target.toMillis());
+  return mapped;
 }
 
 function renderTagFilter() {
@@ -901,11 +931,17 @@ function renderEventList() {
 
     const isFuture = event.target.toMillis() >= now.toMillis();
     const status = isFuture ? "Upcoming" : "Memory";
-    const eventTimeInUserZone = event.target.setZone(USER_ZONE).toFormat("yyyy-LL-dd HH:mm");
+    const yearsDaysParts = isFuture
+      ? getDurationParts(now, event.target, true)
+      : getDurationParts(event.target, now, true);
+    const simplifiedDuration = formatYearsDaysCompact(yearsDaysParts);
     button.innerHTML =
       `<span class="event-item-name">${event.name}</span>` +
-      `<span class="event-item-sub">${status} · ${eventTimeInUserZone}</span>` +
-      `<span class="event-item-tag">${event.tag || "Untagged"}</span>`;
+      `<span class="event-item-sub">${status}</span>` +
+      `<span class="event-item-foot">` +
+      `<span class="event-item-tag">${event.tag || "Untagged"}</span>` +
+      `<span class="event-item-reltime ${isFuture ? "event-item-reltime-future" : "event-item-reltime-past"}">${simplifiedDuration}</span>` +
+      `</span>`;
 
     el.list.appendChild(button);
   });
@@ -916,6 +952,7 @@ function openSidebar() {
     return;
   }
   state.isSidebarOpen = true;
+  lockBodyScroll();
   el.sidebar.classList.add("open");
   el.overlay.classList.remove("hidden");
   el.sidebar.setAttribute("aria-hidden", "false");
@@ -926,6 +963,7 @@ function closeSidebar() {
     return;
   }
   state.isSidebarOpen = false;
+  unlockBodyScroll();
   el.sidebar.classList.remove("open");
   el.overlay.classList.add("hidden");
   el.sidebar.setAttribute("aria-hidden", "true");
