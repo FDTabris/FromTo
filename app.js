@@ -23,13 +23,9 @@ const state = {
 };
 
 function parseUrlPath() {
-  const path = window.location.pathname;
-  if (path.startsWith(BASE_PATH)) {
-    const relativePath = path.slice(BASE_PATH.length);
-    const match = relativePath.match(/^event\/(\d+)$/);
-    return match ? match[1] : null;
-  }
-  return null;
+  const hash = window.location.hash;
+  const match = hash.match(/^#event\/(\d+)$/);
+  return match ? match[1] : null;
 }
 
 function getEventIndexById(eventId) {
@@ -39,9 +35,9 @@ function getEventIndexById(eventId) {
 }
 
 function navigateToEvent(eventId) {
-  const path = eventId ? `${BASE_PATH}event/${eventId}` : BASE_PATH;
-  if (window.location.pathname !== path) {
-    window.history.pushState({ eventId }, '', path);
+  const hash = eventId ? `#event/${eventId}` : '';
+  if (window.location.hash !== hash) {
+    window.location.hash = hash;
   }
   const index = getEventIndexById(eventId);
   setActiveEvent(index, false); // Don't update URL since we just set it
@@ -1063,7 +1059,7 @@ async function loadEvents() {
     } else if (state.events.length > 0) {
       // If no event ID in URL, redirect to first event
       const firstEvent = state.events[0];
-      window.history.replaceState({ eventId: firstEvent.id }, '', `/event/${firstEvent.id}`);
+      window.location.hash = `event/${firstEvent.id}`;
     }
 
     el.detail.classList.remove("hidden");
@@ -1112,8 +1108,8 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-window.addEventListener("popstate", (event) => {
-  const eventId = event.state?.eventId || parseUrlPath();
+window.addEventListener("hashchange", () => {
+  const eventId = parseUrlPath();
   const index = getEventIndexById(eventId);
   setActiveEvent(index, false); // Don't update URL since we're responding to URL change
 });
