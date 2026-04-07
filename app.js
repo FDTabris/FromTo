@@ -1,7 +1,8 @@
 const { DateTime, FixedOffsetZone } = luxon;
 
-const EVENT_FILE = "events.csv";
-const PIC_DIR = "pic";
+const BASE_PATH = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname.replace(/\/[^\/]*$/, '/') || '/';
+const EVENT_FILE = `${BASE_PATH}events.csv`;
+const PIC_DIR = `${BASE_PATH}pic`;
 const PIC_MANIFEST_FILE = `${PIC_DIR}/manifest.json`;
 const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp", "gif", "avif"];
 const USER_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -18,7 +19,33 @@ const state = {
   lastImageEventKey: null,
   isSidebarOpen: false,
   scrollLockY: 0,
+  isInitialLoad: true,
 };
+
+function parseUrlPath() {
+  const path = window.location.pathname;
+  if (path.startsWith(BASE_PATH)) {
+    const relativePath = path.slice(BASE_PATH.length);
+    const match = relativePath.match(/^event\/(\d+)$/);
+    return match ? match[1] : null;
+  }
+  return null;
+}
+
+function getEventIndexById(eventId) {
+  if (!eventId) return 0;
+  const index = state.events.findIndex(event => event.id === eventId);
+  return index >= 0 ? index : 0;
+}
+
+function navigateToEvent(eventId) {
+  const path = eventId ? `${BASE_PATH}event/${eventId}` : BASE_PATH;
+  if (window.location.pathname !== path) {
+    window.history.pushState({ eventId }, '', path);
+  }
+  const index = getEventIndexById(eventId);
+  setActiveEvent(index, false); // Don't update URL since we just set it
+}
 
 const el = {
   shareButton: document.getElementById("share-button"),
@@ -849,11 +876,22 @@ async function renderEventImage(event) {
   el.imageWrap.classList.add("hidden");
 }
 
-function setActiveEvent(index) {
+function setActiveEvent(index, updateUrl = true) {
+  if (index < 0 || index >= state.events.length) return;
+  
   state.activeIndex = index;
   renderEventList();
   renderDetail(true);
   closeSidebar();
+  
+  if (updateUrl && !state.isInitialLoad) {
+    const event = state.events[index];
+    navigateToEvent(event.id);
+  }
+  
+  // Update page title
+  const event = state.events[index];
+  document.title = `${event.name} - FromTo`;
 }
 
 function getFilteredEvents() {
@@ -927,7 +965,7 @@ function renderEventList() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `event-item${index === state.activeIndex ? " active" : ""}`;
-    button.addEventListener("click", () => setActiveEvent(index));
+    button.addEventListener("click", () => navigateToEvent(event.id));
 
     const isFuture = event.target.toMillis() >= now.toMillis();
     const status = isFuture ? "Upcoming" : "Memory";
@@ -1018,15 +1056,31 @@ async function loadEvents() {
       return;
     }
 
+    // Check URL for initial event ID
+    const urlEventId = parseUrlPath();
+    if (urlEventId) {
+      state.activeIndex = getEventIndexById(urlEventId);
+    } else if (state.events.length > 0) {
+      // If no event ID in URL, redirect to first event
+      const firstEvent = state.events[0];
+      window.history.replaceState({ eventId: firstEvent.id }, '', `/event/${firstEvent.id}`);
+    }
+
     el.detail.classList.remove("hidden");
     renderTagFilter();
     renderEventList();
     renderDetail(true);
 
+    // Update page title for initial event
+    const currentEvent = state.events[state.activeIndex];
+    document.title = `${currentEvent.name} - FromTo`;
+
     if (state.timerId) {
       clearInterval(state.timerId);
     }
     state.timerId = setInterval(() => renderDetail(false), 1000);
+    
+    state.isInitialLoad = false;
   } catch (error) {
     el.loading.textContent = `Failed to load events. ${String(error.message || error)}`;
   }
@@ -1056,6 +1110,12 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && state.isSidebarOpen) {
     closeSidebar();
   }
+});
+
+window.addEventListener("popstate", (event) => {
+  const eventId = event.state?.eventId || parseUrlPath();
+  const index = getEventIndexById(eventId);
+  setActiveEvent(index, false); // Don't update URL since we're responding to URL change
 });
 
 loadEvents();

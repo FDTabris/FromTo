@@ -14,6 +14,8 @@ python -m http.server 8000
 
 Then open `http://localhost:8000`.
 
+Each event is accessible via direct URLs like `http://localhost:8000/event/7` where `7` is the event ID.
+
 ## Data Source
 
 Events are loaded from `events.csv`.
