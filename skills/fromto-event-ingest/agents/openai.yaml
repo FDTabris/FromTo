@@ -1,0 +1,3 @@
+interface:
+  display_name: "FromTo Event Ingest"
+  short_description: "Add events and id-mapped images for FromTo"
