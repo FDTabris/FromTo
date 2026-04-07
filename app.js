@@ -1,6 +1,6 @@
 const { DateTime, FixedOffsetZone } = luxon;
 
-const BASE_PATH = window.location.pathname.endsWith('/') ? window.location.pathname : window.location.pathname.replace(/\/[^\/]*$/, '/') || '/';
+const BASE_PATH = window.location.pathname + (window.location.pathname.endsWith('/') ? '' : '/');
 const EVENT_FILE = `${BASE_PATH}events.csv`;
 const PIC_DIR = `${BASE_PATH}pic`;
 const PIC_MANIFEST_FILE = `${PIC_DIR}/manifest.json`;
